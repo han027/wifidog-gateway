@@ -241,6 +241,8 @@ http_callback_auth(httpd *webserver, request *r)
 
 			LOCK_CLIENT_LIST();
 			
+			int changed_flag = 0;
+
 			if ((client = client_list_find(r->clientAddr, mac)) == NULL) {
 				debug(LOG_DEBUG, "New client for %s", r->clientAddr);
 				client_list_append(r->clientAddr, mac, token->value);
@@ -255,6 +257,9 @@ http_callback_auth(httpd *webserver, request *r)
 			    				    	
 			    fw_deny(client->ip, client->mac, client->fw_connection_state);
 			    client_list_delete(client);
+
+			    changed_flag = 1;
+
 			    debug(LOG_DEBUG, "Got logout from %s", client->ip);
 			    
 			    /* Advertise the logout if we have an auth server */
@@ -279,6 +284,11 @@ http_callback_auth(httpd *webserver, request *r)
  			else {
 				debug(LOG_DEBUG, "Client for %s is already in the client list", client->ip);
 			}
+
+			if(changed_flag == 1){
+				write_client_status();
+			}
+
 			UNLOCK_CLIENT_LIST();
 			if (!logout) {
 				authenticate_client(r);

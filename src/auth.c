@@ -143,6 +143,8 @@ authenticate_client(request *r)
 	config = config_get_config();
 	auth_server = get_auth_server();
 
+	int changed_flag = 0;
+
 	switch(auth_response.authcode) {
 
 	case AUTH_ERROR:
@@ -161,6 +163,8 @@ authenticate_client(request *r)
 		);
 		http_send_redirect_to_auth(r, urlFragment, "Redirect to denied message");
 		free(urlFragment);
+
+		changed_flag = 1;
 		break;
 
     case AUTH_VALIDATION:
@@ -176,6 +180,7 @@ authenticate_client(request *r)
 		);
 		http_send_redirect_to_auth(r, urlFragment, "Redirect to activate message");
 		free(urlFragment);
+		changed_flag = 1;
 	    break;
 
     case AUTH_ALLOWED:
@@ -191,6 +196,7 @@ authenticate_client(request *r)
 		);
 		http_send_redirect_to_auth(r, urlFragment, "Redirect to portal");
 		free(urlFragment);
+		changed_flag = 1;
 	    break;
 
     case AUTH_VALIDATION_FAILED:
@@ -210,6 +216,10 @@ authenticate_client(request *r)
 		send_http_page(r, "Internal Error", "We can not validate your request at this time");
 	    break;
 
+	}
+
+	if(changed_flag == 1){
+		write_client_status();
 	}
 
 	UNLOCK_CLIENT_LIST();

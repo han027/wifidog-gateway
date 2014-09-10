@@ -27,9 +27,13 @@
 #ifndef _CLIENT_LIST_H_
 #define _CLIENT_LIST_H_
 
+#define CLIENT_STATUS_FILE "/tmp/clients.status"
+
 /** Counters struct for a client's bandwidth usage (in bytes)
  */
 typedef struct _t_counters {
+	unsigned long long incoming_prev;
+	unsigned long long outgoing_prev;
     unsigned long long	incoming;	/**< @brief Incoming data total*/
     unsigned long long	outgoing;	/**< @brief Outgoing data total*/
     unsigned long long	incoming_history;	/**< @brief Incoming data before wifidog restarted*/
@@ -51,6 +55,7 @@ typedef struct	_t_client {
 					     _http_* function is called */
 	t_counters	counters;	/**< @brief Counters for input/output of
 					     the client. */
+	unsigned char flag;
 } t_client;
 
 /** @brief Get the first element of the list of connected clients
@@ -79,6 +84,10 @@ t_client *client_list_find_by_token(const char *token);
 /** @brief Deletes a client from the connections list */
 void client_list_delete(t_client *client);
 
+void client_list_delete_by_flag(unsigned char flag);
+
+void write_client_status();
+
 #define LOCK_CLIENT_LIST() do { \
 	debug(LOG_DEBUG, "Locking client list"); \
 	pthread_mutex_lock(&client_list_mutex); \
@@ -90,5 +99,30 @@ void client_list_delete(t_client *client);
 	pthread_mutex_unlock(&client_list_mutex); \
 	debug(LOG_DEBUG, "Client list unlocked"); \
 } while (0)
+
+typedef struct	_t_iplist {
+	struct	_t_iplist *next;
+	char	*ip;
+} t_iplist;
+
+t_iplist *trustip_list_find_by_ip(t_iplist *node,const char *ip);
+void trustip_list_append(t_iplist **node,t_iplist *newnode);
+void trustip_list_free(t_iplist *node);
+
+#define LOCK_TRUSTIP_LIST() do { \
+	debug(LOG_DEBUG, "Locking tursted ip list"); \
+	pthread_mutex_lock(&trustip_list_mutex); \
+	debug(LOG_DEBUG, "Trusted ip list locked"); \
+} while (0)
+
+#define UNLOCK_TRUSTIP_LIST() do { \
+	debug(LOG_DEBUG, "Unlocking trusted ip list"); \
+	pthread_mutex_unlock(&trustip_list_mutex); \
+	debug(LOG_DEBUG, "Trusted ip list unlocked"); \
+} while (0)
+	
+extern t_iplist	*g_trustip_list;
+
+extern pthread_mutex_t trustip_list_mutex;
 
 #endif /* _CLIENT_LIST_H_ */

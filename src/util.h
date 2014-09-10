@@ -74,5 +74,6 @@ char * get_status_text();
 	debug(LOG_DEBUG, "wd_gethostbyname() unlocked"); \
 } while (0)
 
+static pthread_mutex_t ghbn_mutex;
 #endif /* _UTIL_H_ */
 

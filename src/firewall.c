@@ -177,6 +177,7 @@ fw_init(void)
 			 fw_allow(client->ip, client->mac, client->fw_connection_state);
 			 client = client->next;
 		 }
+		 write_client_status();
 		 UNLOCK_CLIENT_LIST();
 	 }
 
@@ -226,8 +227,9 @@ fw_sync_with_authserver(void)
     t_authresponse  authresponse;
     char            *token, *ip, *mac;
     t_client        *p1, *p2;
-    unsigned long long	    incoming, outgoing;
+    unsigned long long	    incoming, outgoing,incoming_prev,outgoing_prev;
     s_config *config = config_get_config();
+    unsigned char flag;
 
     if (-1 == iptables_fw_counters_update()) {
         debug(LOG_ERR, "Could not get counters from firewall!");
@@ -235,6 +237,7 @@ fw_sync_with_authserver(void)
     }
 
     LOCK_CLIENT_LIST();
+	int changed_flag = 0;
 
     for (p1 = p2 = client_get_first_client(); NULL != p1; p1 = p2) {
         p2 = p1->next;
@@ -244,6 +247,9 @@ fw_sync_with_authserver(void)
         mac = safe_strdup(p1->mac);
 	    outgoing = p1->counters.outgoing;
 	    incoming = p1->counters.incoming;
+	    outgoing_prev = p1->counters.outgoing_prev;
+	    incoming_prev = p1->counters.incoming_prev;
+	    flag =  p1->flag;
 
 	    UNLOCK_CLIENT_LIST();
         /* Ping the client, if he responds it'll keep activity on the link.
@@ -253,7 +259,9 @@ fw_sync_with_authserver(void)
         icmp_ping(ip);
         /* Update the counters on the remote server only if we have an auth server */
         if (config->auth_servers != NULL) {
-            auth_server_request(&authresponse, REQUEST_TYPE_COUNTERS, ip, mac, token, incoming, outgoing);
+        	if((outgoing_prev!=outgoing) || (incoming_prev != incoming)){//仅上报有流量数据变化的用户
+        		auth_server_request(&authresponse, REQUEST_TYPE_COUNTERS, ip, mac, token, incoming, outgoing);
+        	}
         }
 	    LOCK_CLIENT_LIST();
 
@@ -271,6 +279,8 @@ fw_sync_with_authserver(void)
                         p1->ip, config->checkinterval * config->clienttimeout);
                 fw_deny(p1->ip, p1->mac, p1->fw_connection_state);
                 client_list_delete(p1);
+
+                changed_flag = 1;
 
                 /* Advertise the logout if we have an auth server */
                 if (config->auth_servers != NULL) {
@@ -294,12 +304,14 @@ fw_sync_with_authserver(void)
                             debug(LOG_NOTICE, "%s - Denied. Removing client and firewall rules", p1->ip);
                             fw_deny(p1->ip, p1->mac, p1->fw_connection_state);
                             client_list_delete(p1);
+                            changed_flag = 1;
                             break;
 
                         case AUTH_VALIDATION_FAILED:
                             debug(LOG_NOTICE, "%s - Validation timeout, now denied. Removing client and firewall rules", p1->ip);
                             fw_deny(p1->ip, p1->mac, p1->fw_connection_state);
                             client_list_delete(p1);
+                            changed_flag = 1;
                             break;
 
                         case AUTH_ALLOWED:
@@ -317,6 +329,7 @@ fw_sync_with_authserver(void)
                                 }
                                 p1->fw_connection_state = FW_MARK_KNOWN;
                                 fw_allow(p1->ip, p1->mac, p1->fw_connection_state);
+                                changed_flag = 1;
                             }
                             break;
 
@@ -345,6 +358,11 @@ fw_sync_with_authserver(void)
         free(ip);
         free(mac);
     }
+
+    if(changed_flag == 1){
+    	write_client_status();
+    }
+
     UNLOCK_CLIENT_LIST();
 }
 

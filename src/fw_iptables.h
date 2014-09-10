@@ -71,4 +71,6 @@ int iptables_fw_access(fw_access_t type, const char *ip, const char *mac, int ta
 /** @brief All counters in the client list */
 int iptables_fw_counters_update(void);
 
+int  test_trustip_change(void);
+
 #endif /* _IPTABLES_H_ */

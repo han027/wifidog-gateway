@@ -33,6 +33,8 @@
 #include <signal.h>
 #include <errno.h>
 #include <time.h>
+#include <sys/inotify.h>
+
 
 /* for strerror() */
 #include <string.h>
@@ -60,12 +62,16 @@
 #include "httpd_thread.h"
 #include "util.h"
 
+extern pthread_mutex_t	config_mutex;
+
 /** XXX Ugly hack 
  * We need to remember the thread IDs of threads that simulate wait with pthread_cond_timedwait
  * so we can explicitly kill them in the termination handler
  */
 static pthread_t tid_fw_counter = 0;
 static pthread_t tid_ping = 0; 
+static pthread_t tid_refresh_ip = 0;
+static pthread_t tid_reloadrules = 0;
 
 /* The internal web server */
 httpd * webserver = NULL;
@@ -200,10 +206,12 @@ void get_clients_from_parent(void) {
 						}
 						else if (strcmp(key, "counters_incoming") == 0) {
 							client->counters.incoming_history = atoll(value);
+							client->counters.incoming_prev = client->counters.incoming;
 							client->counters.incoming = client->counters.incoming_history;
 						}
 						else if (strcmp(key, "counters_outgoing") == 0) {
 							client->counters.outgoing_history = atoll(value);
+							client->counters.outgoing_prev = client->counters.outgoing;
 							client->counters.outgoing = client->counters.outgoing_history;
 						}
 						else if (strcmp(key, "counters_last_updated") == 0) {
@@ -301,6 +309,190 @@ termination_handler(int s)
 	debug(LOG_NOTICE, "Exiting...");
 	exit(s == 0 ? 1 : 0);
 }
+
+/**
+ * 更新IP地址列表线程
+ */
+void thread_refresh_trustip(void *arg)
+{
+	pthread_cond_t		cond = PTHREAD_COND_INITIALIZER;
+	pthread_mutex_t		cond_mutex = PTHREAD_MUTEX_INITIALIZER;
+	struct	timespec	timeout;
+	int bChanged;
+
+	while (1) {
+		/* Make sure we check the servers at the very begining */
+		debug(LOG_DEBUG, "Running refresh trust ip address");
+
+		LOCK_CONFIG();
+		bChanged = test_trustip_change();
+		if(1==bChanged){
+			iptables_fw_set_trustedhost();
+		}
+		UNLOCK_CONFIG();
+
+		/* Sleep for config.checkinterval seconds... */
+		timeout.tv_sec = time(NULL) + 600;
+		timeout.tv_nsec = 0;
+
+		/* Mutex must be locked for pthread_cond_timedwait... */
+		pthread_mutex_lock(&cond_mutex);
+
+		/* Thread safe "sleep" */
+		pthread_cond_timedwait(&cond, &cond_mutex, &timeout);
+
+		/* No longer needs to be locked */
+		pthread_mutex_unlock(&cond_mutex);
+	}
+}
+
+
+/**
+ * 从文件中读取一行
+ */
+int readLine(char* line, FILE* stream) {
+	int flag = 1;
+	char buf[MAX_BUF];
+	unsigned int i, k = 0;
+
+	if (fgets(buf, MAX_BUF, stream) != NULL) {
+		/*   Delete   the   last   '\r'   or   '\n'   or   '   '   or   '\t'   character   */
+		for (i = strlen(buf) - 1; i >= 0; i--) {
+			if (buf[i] == '\r' || buf[i] == '\n' || buf[i] == ' '
+					|| buf[i] == '\t')
+				buf[i] = '\0';
+			else
+				break; /*   dap   loop   */
+		}
+
+		/*   Delete   the   front   '\r'   or   '\n'   or   '   '   or   '\t'   character   */
+		for (i = 0; i <= strlen(buf); i++) {
+			if (flag
+					&& (buf[i] == '\r' || buf[i] == '\n' || buf[i] == ' '
+							|| buf[i] == '\t'))
+				continue;
+			else {
+				flag = 0;
+				line[k++] = buf[i];
+			}
+		}
+		return 0;
+	}
+
+	return -1;
+}
+
+/**
+ * 从外部文件重新载入配置
+ */
+void
+reload_handler()
+{
+	FILE* fp = NULL;
+	char linebuffer[MAX_BUF];
+	unsigned int len;
+	char szIp[32],szMac[32],szToken[64];
+	unsigned int connstat;
+	int n;
+	t_client* client;
+
+	debug(LOG_DEBUG, "/tmp/clients.rules changed. Trying to reload rules from /tmp/clients.rules");
+
+	LOCK_CLIENT_LIST();
+
+	client=client_get_first_client();
+	while(client){
+		if(client->flag==1){ //首先重置外部客户列表标志为11,待删除
+			client->flag = 11;
+		}
+		client = client->next;
+	}
+
+	memset(linebuffer, 0, sizeof(linebuffer));
+	len = 0;
+	client = NULL;
+	fp = fopen("/tmp/clients.rules","r");
+	if(fp){
+		while(readLine(linebuffer,fp) == 0){
+			n = sscanf(linebuffer,"%s %s %u %s",szIp,szMac,&connstat,szToken);
+			if(n==4){
+				debug(LOG_DEBUG,"Found Ip=%s mac=%s stat=%u token=%s",szIp,szMac,connstat,szToken);
+				client = client_list_find(szIp,szMac);
+				if(client){
+					if(client->flag == 11) client->flag = 1; //如果是外部客户的话，去除待删除标志
+					debug(LOG_DEBUG,"client founded in list.");
+					if(client->fw_connection_state != connstat){
+						fw_deny(client->ip,client->mac,client->fw_connection_state);
+						client->fw_connection_state = connstat;
+						fw_allow(client->ip,client->mac,client->fw_connection_state);
+					}
+				}else{
+					debug(LOG_DEBUG,"client cannot found in list.");
+					client = client_list_append(szIp,szMac,szToken);
+					if(client){
+						client->fw_connection_state = connstat;
+						fw_allow(client->ip,client->mac,client->fw_connection_state);
+						client->flag = 1; //表示是外部进入的
+					}
+				}
+			}
+			memset(linebuffer, 0, sizeof(linebuffer));
+			client = NULL;
+		}
+		fclose(fp);
+	}
+
+	client=client_get_first_client();
+	while(client){
+		if(client->flag==11){ //待删除的，删除iptables规则
+			fw_deny(client->ip,client->mac,client->fw_connection_state);
+		}
+		client = client->next;
+	}
+
+	client_list_delete_by_flag(11); //在客户队列中清除待删除的
+
+	UNLOCK_CLIENT_LIST();
+}
+
+#define EVENT_SIZE  ( sizeof (struct inotify_event) )
+#define EVENT_BUF_LEN     ( 8 * ( EVENT_SIZE + 16 ) )
+
+void thread_checkrule(void *arg){
+	int fd, wd, length;
+	FILE* fp = NULL;
+	char buffer[EVENT_BUF_LEN];
+	fd = inotify_init();
+	if (fd < 0) {
+		return ;
+	}
+	fp = fopen("/tmp/clients.rules","a");
+	if(fp){
+		fclose(fp);
+	}
+
+	wd = inotify_add_watch(fd, "/tmp/clients.rules", IN_MODIFY);
+	while (1)  // 在外面加了一个循环，防止监听完一个事件后就退出了
+	{
+		fd_set fds;
+		FD_ZERO(&fds);
+		FD_SET(fd, &fds);
+
+		if (select(fd + 1, &fds, NULL, NULL, NULL) > 0) {
+			while (((length = read(fd, &buffer, sizeof(buffer))) < 0)
+					&& (errno == EINTR)) {  //没有读取到事件。
+				usleep(1000 * 1000);
+			}
+			if (length > 0) {
+				reload_handler();
+			}
+		}
+		usleep(1000 * 1000);
+	}
+	inotify_rm_watch(fd, wd);
+	close(fd);
+}
+
 
 /** @internal 
  * Registers all the signal handlers
@@ -446,6 +638,22 @@ main_loop(void)
 	}
 	pthread_detach(tid_ping);
 	
+	/* 开始更新IP线程 */
+	result = pthread_create(&tid_refresh_ip,NULL,(void*)thread_refresh_trustip,NULL);
+	if (result != 0) {
+	    debug(LOG_ERR, "FATAL: Failed to create a new thread (refresh ip) - exiting");
+		termination_handler(0);
+	}
+	pthread_detach(tid_refresh_ip);
+
+	/* 开始监测rules文件线程 */
+	result = pthread_create(&tid_reloadrules,NULL,(void*)thread_checkrule,NULL);
+	if (result != 0) {
+	    debug(LOG_ERR, "FATAL: Failed to create a new thread (check rules) - exiting");
+		termination_handler(0);
+	}
+	pthread_detach(tid_reloadrules);
+
 	debug(LOG_NOTICE, "Waiting for connections");
 	while(1) {
 		r = httpdGetConnection(webserver, NULL);

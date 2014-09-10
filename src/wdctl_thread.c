@@ -392,6 +392,8 @@ wdctl_reset(int fd, const char *arg)
 	fw_deny(node->ip, node->mac, node->fw_connection_state);
 	client_list_delete(node);
 
+	write_client_status();
+
 	UNLOCK_CLIENT_LIST();
 
 	if(write(fd, "Yes", 3) == -1)

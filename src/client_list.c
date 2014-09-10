@@ -44,6 +44,11 @@
 #include "conf.h"
 #include "client_list.h"
 
+
+pthread_mutex_t trustip_list_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+t_iplist	*g_trustip_list = NULL;
+
 /** Global mutex to protect access to the client list */
 pthread_mutex_t client_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -95,7 +100,7 @@ client_list_append(const char *ip, const char *mac, const char *token)
     curclient->ip = safe_strdup(ip);
     curclient->mac = safe_strdup(mac);
     curclient->token = safe_strdup(token);
-    curclient->counters.incoming = curclient->counters.incoming_history = curclient->counters.outgoing = curclient->counters.outgoing_history = 0;
+    curclient->counters.incoming = curclient->counters.incoming_history = curclient->counters.outgoing = curclient->counters.outgoing_history=curclient->counters.incoming_prev = curclient->counters.outgoing_prev  = 0;
     curclient->counters.last_updated = time(NULL);
 
     if (prevclient == NULL) {
@@ -247,4 +252,93 @@ client_list_delete(t_client * client)
             _client_list_free_node(client);
         }
     }
+}
+
+t_iplist         *
+trustip_list_find_by_ip(t_iplist *node,const char *ip)
+{
+    t_iplist         *ptr;
+
+    ptr = node;
+    while (NULL != ptr) {
+        if (0 == strcmp(ptr->ip, ip))
+            return ptr;
+        ptr = ptr->next;
+    }
+
+    return NULL;
+}
+
+void trustip_list_free(t_iplist *node){
+	t_iplist         *ptr,*pnext;
+	ptr = node;
+	pnext = NULL;
+	while(NULL != ptr){
+		debug(LOG_DEBUG, "FreeNode ip=%s",ptr->ip);
+		if(NULL != ptr->ip) free(ptr->ip);
+		pnext = ptr->next;
+		free(ptr);
+		ptr = pnext;
+	}
+}
+
+void trustip_list_append(t_iplist **node,t_iplist *newnode){
+    t_iplist         *curclient, *prevclient;
+
+    prevclient = NULL;
+    curclient = *node;
+
+    while (curclient != NULL) {
+        prevclient = curclient;
+        curclient = curclient->next;
+    }
+
+    if (prevclient == NULL) {
+        *node = newnode;
+    } else {
+        prevclient->next = newnode;
+    }
+}
+
+/**
+ * 删除指定标志的client
+ */
+void client_list_delete_by_flag(unsigned char flag){
+    t_client         *ptr,*client;
+
+    ptr = firstclient;
+    while(ptr != NULL && ptr->next != NULL){ //首先忽略第一个
+    	if(ptr->next->flag == flag){
+    		client = ptr->next;
+    		ptr->next = ptr->next->next;
+    		_client_list_free_node(client);
+    	}else{
+    		ptr = ptr->next;
+    	}
+    }
+    //再判断第一个
+    ptr = firstclient;
+    if(ptr != NULL && ptr->flag == flag){
+    	client = ptr;
+    	firstclient = ptr->next;
+    	_client_list_free_node(client);
+    }
+}
+
+void write_client_status(){
+	t_client* client;
+	char* tempstring = NULL;
+	FILE* fp = fopen(CLIENT_STATUS_FILE,"w");
+	if(fp){
+		client=client_get_first_client();
+		while(client){
+			if(client->flag==0){ //仅记录本地的
+				safe_asprintf(&tempstring, "%s %s %u %s\n", client->ip, client->mac, client->fw_connection_state,client->token);
+				fwrite(tempstring,strlen(tempstring),1,fp);
+			}
+			client = client->next;
+			free(tempstring);
+		}
+		fclose(fp);
+	}
 }

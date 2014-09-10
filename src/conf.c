@@ -96,6 +96,7 @@ typedef enum {
 	oTrustedMACList,
         oHtmlMessageFile,
 	oProxyPort,
+	oTrustedHostList,
 } OpCodes;
 
 /** @internal
@@ -136,6 +137,7 @@ static const struct {
 	{ "trustedmaclist",		oTrustedMACList },
         { "htmlmessagefile",		oHtmlMessageFile },
 	{ "proxyport",			oProxyPort },
+	{ "trustedhostlist",	oTrustedHostList},
 	{ NULL,				oBadOption },
 };
 
@@ -718,6 +720,9 @@ config_read(const char *filename)
 				case oTrustedMACList:
 					parse_trusted_mac_list(p1);
 					break;
+				case oTrustedHostList:
+					parse_trusted_host_list(p1);
+					break;
 				case oHTTPDName:
 					config.httpdname = safe_strdup(p1);
 					break;
@@ -834,6 +839,41 @@ void parse_trusted_mac_list(const char *ptr) {
 	free(ptrcopy);
 
 	free(mac);
+
+}
+
+void parse_trusted_host_list(const char *ptr) {
+	char *ptrcopy = NULL;
+	char *host = NULL;
+	t_trusted_host *p = NULL;
+
+	debug(LOG_DEBUG, "Parsing string [%s] for trusted Hostname", ptr);
+
+	/* strsep modifies original, so let's make a copy */
+	ptrcopy = safe_strdup(ptr);
+
+	while ((host = strsep(&ptrcopy, ","))) {
+			/* Copy host to the list */
+
+		debug(LOG_DEBUG, "Adding Host [%s] to trusted list", host);
+
+		if (config.trustedhostlist == NULL) {
+			config.trustedhostlist = safe_malloc(sizeof(t_trusted_host));
+			config.trustedhostlist->host = safe_strdup(host);
+			config.trustedhostlist->next = NULL;
+		}
+		else {
+			/* Advance to the last entry */
+			for (p = config.trustedhostlist; p->next != NULL; p = p->next);
+			p->next = safe_malloc(sizeof(t_trusted_host));
+			p = p->next;
+			p->host = safe_strdup(host);
+			p->next = NULL;
+		}
+
+	}
+
+	free(ptrcopy);
 
 }
 
