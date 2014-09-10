@@ -34,6 +34,8 @@
 #include <errno.h>
 #include <string.h>
 #include <pthread.h>
+#include <netdb.h>
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -367,6 +369,8 @@ iptables_fw_init(void)
 	iptables_do_command("-t nat -N " TABLE_WIFIDOG_GLOBAL);
 	iptables_do_command("-t nat -N " TABLE_WIFIDOG_UNKNOWN);
 	iptables_do_command("-t nat -N " TABLE_WIFIDOG_AUTHSERVERS);
+	//add by childman
+	iptables_do_command("-t nat -N " TABLE_WIFIDOG_VALIDATE);
 
 	/* Assign links and rules to these new chains */
 	iptables_do_command("-t nat -A PREROUTING -i %s -j " TABLE_WIFIDOG_OUTGOING, config->gw_interface);
