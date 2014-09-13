@@ -64,6 +64,7 @@ static void wdctl_status(int);
 static void wdctl_stop(int);
 static void wdctl_reset(int, const char *);
 static void wdctl_restart(int);
+static void wdctl_reload(int);
 
 /** Launches a thread that monitors the control socket for request
 @param arg Must contain a pointer to a string containing the Unix domain socket to open
@@ -190,6 +191,8 @@ thread_wdctl_handler(void *arg)
 		wdctl_reset(fd, (request + 6));
 	} else if (strncmp(request, "restart", 7) == 0) {
 		wdctl_restart(fd);
+	} else if (strncmp(request, "reload", 6) == 0) {
+		wdctl_reload(fd);
 	}
 
 	if (!done) {
@@ -401,3 +404,120 @@ wdctl_reset(int fd, const char *arg)
 
 	debug(LOG_DEBUG, "Exiting wdctl_reset...");
 }
+
+
+/**
+ * 从文件中读取一行
+ */
+int readLine(char* line, FILE* stream) {
+	int flag = 1;
+	char buf[MAX_BUF];
+	unsigned int i, k = 0;
+
+	if (fgets(buf, MAX_BUF, stream) != NULL) {
+		/*   Delete   the   last   '\r'   or   '\n'   or   '   '   or   '\t'   character   */
+		for (i = strlen(buf) - 1; i >= 0; i--) {
+			if (buf[i] == '\r' || buf[i] == '\n' || buf[i] == ' '
+					|| buf[i] == '\t')
+				buf[i] = '\0';
+			else
+				break; /*   dap   loop   */
+		}
+
+		/*   Delete   the   front   '\r'   or   '\n'   or   '   '   or   '\t'   character   */
+		for (i = 0; i <= strlen(buf); i++) {
+			if (flag
+					&& (buf[i] == '\r' || buf[i] == '\n' || buf[i] == ' '
+							|| buf[i] == '\t'))
+				continue;
+			else {
+				flag = 0;
+				line[k++] = buf[i];
+			}
+		}
+		return 0;
+	}
+
+	return -1;
+}
+
+/**
+ * 从外部文件重新载入配置
+ */
+static void
+wdctl_reload(int fd)
+{
+	FILE* fp = NULL;
+	char linebuffer[MAX_BUF];
+	unsigned int len;
+	char szIp[32],szMac[32],szToken[64];
+	unsigned int connstat;
+	int n;
+	t_client* client;
+
+	debug(LOG_DEBUG, "Entering wdctl_reload...");
+
+	debug(LOG_DEBUG, " Trying to reload rules from /tmp/clients.rules");
+
+	LOCK_CLIENT_LIST();
+
+	client=client_get_first_client();
+	while(client){
+		if(client->flag==1){ //首先重置外部客户列表标志为11,待删除
+			client->flag = 11;
+		}
+		client = client->next;
+	}
+
+	memset(linebuffer, 0, sizeof(linebuffer));
+	len = 0;
+	client = NULL;
+	fp = fopen("/tmp/clients.rules","r");
+	if(fp){
+		while(readLine(linebuffer,fp) == 0){
+			n = sscanf(linebuffer,"%s %s %u %s",szIp,szMac,&connstat,szToken);
+			if(n==4){
+				debug(LOG_DEBUG,"Found Ip=%s mac=%s stat=%u token=%s",szIp,szMac,connstat,szToken);
+				client = client_list_find(szIp,szMac);
+				if(client){
+					if(client->flag == 11) client->flag = 1; //如果是外部客户的话，去除待删除标志
+					debug(LOG_DEBUG,"client founded in list.");
+					if(client->fw_connection_state != connstat){
+						fw_deny(client->ip,client->mac,client->fw_connection_state);
+						client->fw_connection_state = connstat;
+						fw_allow(client->ip,client->mac,client->fw_connection_state);
+					}
+				}else{
+					debug(LOG_DEBUG,"client cannot found in list.");
+					client = client_list_append(szIp,szMac,szToken);
+					if(client){
+						client->fw_connection_state = connstat;
+						fw_allow(client->ip,client->mac,client->fw_connection_state);
+						client->flag = 1; //表示是外部进入的
+					}
+				}
+			}
+			memset(linebuffer, 0, sizeof(linebuffer));
+			client = NULL;
+		}
+		fclose(fp);
+	}
+
+	client=client_get_first_client();
+	while(client){
+		if(client->flag==11){ //待删除的，删除iptables规则
+			fw_deny(client->ip,client->mac,client->fw_connection_state);
+		}
+		client = client->next;
+	}
+
+	client_list_delete_by_flag(11); //在客户队列中清除待删除的
+
+	UNLOCK_CLIENT_LIST();
+
+	if(write(fd, "Done", 4) == -1)
+		debug(LOG_CRIT, "Unable to write Done: %s", strerror(errno));
+
+	debug(LOG_DEBUG, "Exiting wdctl_reload...");
+}
+

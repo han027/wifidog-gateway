@@ -51,6 +51,7 @@ static void wdctl_status(void);
 static void wdctl_stop(void);
 static void wdctl_reset(void);
 static void wdctl_restart(void);
+static void wdctl_reload(void);
 
 /** @internal
  * @brief Print usage
@@ -71,6 +72,7 @@ usage(void)
     printf("  status            Obtain the status of wifidog\n");
     printf("  stop              Stop the running wifidog\n");
     printf("  restart           Re-start the running wifidog (without disconnecting active users!)\n");
+    printf("  reload           Reload the rules from /tmp/client.rules\n");
     printf("\n");
 }
 
@@ -137,6 +139,8 @@ parse_commandline(int argc, char **argv)
 	    config.param = strdup(*(argv + optind + 1));
     } else if (strcmp(*(argv + optind), "restart") == 0) {
 	    config.command = WDCTL_RESTART;
+    } else if (strcmp(*(argv + optind), "reload") == 0) {
+	    config.command = WDCTL_RELOAD;
     }
 	 else {
 	    fprintf(stderr, "wdctl: Error: Invalid command \"%s\"\n", *(argv + optind));
@@ -292,6 +296,29 @@ wdctl_restart(void)
 	close(sock);
 }
 
+static void
+wdctl_reload(void)
+{
+	int	sock;
+	char	buffer[4096];
+	char	request[16];
+	int	len;
+
+	sock = connect_to_server(config.socket);
+
+	strncpy(request, "reload\r\n\r\n", 15);
+
+	len = send_request(sock, request);
+
+	while ((len = read(sock, buffer, sizeof(buffer))) > 0) {
+		buffer[len] = '\0';
+		printf("%s", buffer);
+	}
+
+	shutdown(sock, 2);
+	close(sock);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -315,6 +342,10 @@ main(int argc, char **argv)
 		
 	case WDCTL_RESTART:
 		wdctl_restart();
+		break;
+
+	case WDCTL_RELOAD:
+		wdctl_reload();
 		break;
 
 	default:

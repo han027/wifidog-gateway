@@ -4,3 +4,7 @@
 *.lo
 .deps
 .libs
+.cproject
+.project
+.settings/
+
