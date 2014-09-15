@@ -332,10 +332,8 @@ void write_client_status(){
 	if(fp){
 		client=client_get_first_client();
 		while(client){
-			if(client->flag==0){ //仅记录本地的
-				safe_asprintf(&tempstring, "%s %s %u %s\n", client->ip, client->mac, client->fw_connection_state,client->token);
-				fwrite(tempstring,strlen(tempstring),1,fp);
-			}
+			safe_asprintf(&tempstring, "%s %s %u %s\n", client->ip, client->mac, client->fw_connection_state,client->token);
+			fwrite(tempstring,strlen(tempstring),1,fp);
 			client = client->next;
 			free(tempstring);
 		}
