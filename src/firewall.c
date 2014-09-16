@@ -229,6 +229,7 @@ fw_sync_with_authserver(void)
     t_client        *p1, *p2;
     unsigned long long	    incoming, outgoing;
     s_config *config = config_get_config();
+	int changed_flag = 0;
     unsigned char flag;
 
     if (-1 == iptables_fw_counters_update()) {
@@ -237,7 +238,6 @@ fw_sync_with_authserver(void)
     }
 
     LOCK_CLIENT_LIST();
-	int changed_flag = 0;
 
     for (p1 = p2 = client_get_first_client(); NULL != p1; p1 = p2) {
         p2 = p1->next;
@@ -247,7 +247,6 @@ fw_sync_with_authserver(void)
         mac = safe_strdup(p1->mac);
 	    outgoing = p1->counters.outgoing;
 	    incoming = p1->counters.incoming;
-	    flag =  p1->flag;
 
 	    UNLOCK_CLIENT_LIST();
         /* Ping the client, if he responds it'll keep activity on the link.
@@ -255,11 +254,13 @@ fw_sync_with_authserver(void)
          * way to deal witht his is to keep the DHCP lease time extremely
          * short:  Shorter than config->checkinterval * config->clienttimeout */
         icmp_ping(ip);
+	    flag =  0;
         /* Update the counters on the remote server only if we have an auth server */
         if (config->auth_servers != NULL) {
         	time_t current_time = time(NULL);
         	if(p1->counters.last_updated+config->checkinterval>=current_time){//仅上报有流量数据变化的用户
         		auth_server_request(&authresponse, REQUEST_TYPE_COUNTERS, ip, mac, token, incoming, outgoing);
+        		flag = 1;
         	}
         }
 	    LOCK_CLIENT_LIST();
@@ -297,7 +298,7 @@ fw_sync_with_authserver(void)
                  * Only run if we have an auth server
                  * configured!
                  */
-                if (config->auth_servers != NULL) {
+                if ((config->auth_servers != NULL) && (flag==1)) {
                     switch (authresponse.authcode) {
                         case AUTH_DENIED:
                             debug(LOG_NOTICE, "%s - Denied. Removing client and firewall rules", p1->ip);
