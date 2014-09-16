@@ -328,12 +328,15 @@ void client_list_delete_by_flag(unsigned char flag){
 void write_client_status(){
 	t_client* client;
 	char* tempstring = NULL;
+	time_t current_time = time(NULL);
 	FILE* fp = fopen(CLIENT_STATUS_FILE,"w");
 	if(fp){
 		client=client_get_first_client();
 		while(client){
-			safe_asprintf(&tempstring, "%s %s %u %s\n", client->ip, client->mac, client->fw_connection_state,client->token);
-			fwrite(tempstring,strlen(tempstring),1,fp);
+			if(client->counters.last_updated+config->checkinterval*2>=current_time){ //仅记录有流量更新的，限定２倍检查时间内有流量的更新
+				safe_asprintf(&tempstring, "%s %s %u %s\n", client->ip, client->mac, client->fw_connection_state,client->token);
+				fwrite(tempstring,strlen(tempstring),1,fp);
+			}
 			client = client->next;
 			free(tempstring);
 		}
