@@ -508,6 +508,9 @@ get_ext_iface(void)
 			snprintf((buffer + len), (sizeof(buffer) - len), "  Downloaded: %llu %llu\n  Uploaded: %llu %llu\n" , first->counters.incoming, first->counters.incoming_prev, first->counters.outgoing, first->counters.outgoing_prev);
 			len = strlen(buffer);
 
+			snprintf((buffer + len), (sizeof(buffer) - len), "  Last updated: %llu" , first->counters.last_updated);
+			len = strlen(buffer);
+
 			count++;
 			first = first->next;
 		}
