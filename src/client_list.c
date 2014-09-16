@@ -328,6 +328,7 @@ void client_list_delete_by_flag(unsigned char flag){
 void write_client_status(){
 	t_client* client;
 	char* tempstring = NULL;
+	s_config *config = config_get_config();
 	time_t current_time = time(NULL);
 	FILE* fp = fopen(CLIENT_STATUS_FILE,"w");
 	if(fp){
