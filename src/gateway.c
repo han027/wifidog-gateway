@@ -206,12 +206,10 @@ void get_clients_from_parent(void) {
 						}
 						else if (strcmp(key, "counters_incoming") == 0) {
 							client->counters.incoming_history = atoll(value);
-							client->counters.incoming_prev = client->counters.incoming;
 							client->counters.incoming = client->counters.incoming_history;
 						}
 						else if (strcmp(key, "counters_outgoing") == 0) {
 							client->counters.outgoing_history = atoll(value);
-							client->counters.outgoing_prev = client->counters.outgoing;
 							client->counters.outgoing = client->counters.outgoing_history;
 						}
 						else if (strcmp(key, "counters_last_updated") == 0) {

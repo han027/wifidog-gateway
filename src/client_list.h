@@ -32,8 +32,6 @@
 /** Counters struct for a client's bandwidth usage (in bytes)
  */
 typedef struct _t_counters {
-	unsigned long long incoming_prev;
-	unsigned long long outgoing_prev;
     unsigned long long	incoming;	/**< @brief Incoming data total*/
     unsigned long long	outgoing;	/**< @brief Outgoing data total*/
     unsigned long long	incoming_history;	/**< @brief Incoming data before wifidog restarted*/

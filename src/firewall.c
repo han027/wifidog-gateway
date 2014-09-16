@@ -227,7 +227,7 @@ fw_sync_with_authserver(void)
     t_authresponse  authresponse;
     char            *token, *ip, *mac;
     t_client        *p1, *p2;
-    unsigned long long	    incoming, outgoing,incoming_prev,outgoing_prev;
+    unsigned long long	    incoming, outgoing;
     s_config *config = config_get_config();
     unsigned char flag;
 
@@ -247,8 +247,6 @@ fw_sync_with_authserver(void)
         mac = safe_strdup(p1->mac);
 	    outgoing = p1->counters.outgoing;
 	    incoming = p1->counters.incoming;
-	    outgoing_prev = p1->counters.outgoing_prev;
-	    incoming_prev = p1->counters.incoming_prev;
 	    flag =  p1->flag;
 
 	    UNLOCK_CLIENT_LIST();
@@ -259,7 +257,8 @@ fw_sync_with_authserver(void)
         icmp_ping(ip);
         /* Update the counters on the remote server only if we have an auth server */
         if (config->auth_servers != NULL) {
-        	if((outgoing_prev!=outgoing) || (incoming_prev != incoming)){//仅上报有流量数据变化的用户
+        	time_t current_time = time(NULL);
+        	if(p1->counters.last_updated+config->checkinterval>=current_time){//仅上报有流量数据变化的用户
         		auth_server_request(&authresponse, REQUEST_TYPE_COUNTERS, ip, mac, token, incoming, outgoing);
         	}
         }
