@@ -334,7 +334,7 @@ void write_client_status(){
 	if(fp){
 		client=client_get_first_client();
 		while(client){
-			safe_asprintf(&tempstring, "%s %s %u %s\n", client->ip, client->mac, client->fw_connection_state,client->token);
+			safe_asprintf(&tempstring, "%s %s %u %s %ld\n", client->ip, client->mac, client->fw_connection_state,client->token,client->counters.last_updated);
 			fwrite(tempstring,strlen(tempstring),1,fp);
 			client = client->next;
 			free(tempstring);
