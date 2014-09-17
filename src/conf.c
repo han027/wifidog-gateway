@@ -847,7 +847,6 @@ static void
 parse_trusted_host_list(FILE *file, const char *filename, int *linenum) {
 	t_trusted_host *p = NULL;
 
-	debug(LOG_DEBUG, "Parsing string [%s] for trusted Hostname", ptr);
 	char		line[MAX_BUF],
 			*p1,
 			*p2;
