@@ -146,6 +146,7 @@ static int parse_boolean_value(char *);
 static void parse_auth_server(FILE *, const char *, int *);
 static int _parse_firewall_rule(const char *ruleset, char *leftover);
 static void parse_firewall_ruleset(const char *, FILE *, const char *, int *);
+static void parse_trusted_host_list(FILE *, const char *, int *);
 
 static OpCodes config_parse_token(const char *cp, const char *filename, int linenum);
 
@@ -721,7 +722,8 @@ config_read(const char *filename)
 					parse_trusted_mac_list(p1);
 					break;
 				case oTrustedHostList:
-					parse_trusted_host_list(p1);
+					parse_trusted_host_list(fd, filename,
+							&linenum);
 					break;
 				case oHTTPDName:
 					config.httpdname = safe_strdup(p1);
@@ -841,40 +843,58 @@ void parse_trusted_mac_list(const char *ptr) {
 	free(mac);
 
 }
-
-void parse_trusted_host_list(const char *ptr) {
-	char *ptrcopy = NULL;
-	char *host = NULL;
+static void
+parse_trusted_host_list(FILE *file, const char *filename, int *linenum) {
 	t_trusted_host *p = NULL;
 
 	debug(LOG_DEBUG, "Parsing string [%s] for trusted Hostname", ptr);
+	char		line[MAX_BUF],
+			*p1,
+			*p2;
 
-	/* strsep modifies original, so let's make a copy */
-	ptrcopy = safe_strdup(ptr);
+	/* Parsing loop */
+	while (memset(line, 0, MAX_BUF) && fgets(line, MAX_BUF - 1, file) && (strchr(line, '}') == NULL)) {
+		(*linenum)++; /* increment line counter. */
 
-	while ((host = strsep(&ptrcopy, ","))) {
+		/* skip leading blank spaces */
+		for (p1 = line; isblank(*p1); p1++);
+
+		/* End at end of line */
+		if ((p2 = strchr(p1, '#')) != NULL) {
+			*p2 = '\0';
+		} else if ((p2 = strchr(p1, '\r')) != NULL) {
+			*p2 = '\0';
+		} else if ((p2 = strchr(p1, '\n')) != NULL) {
+			*p2 = '\0';
+		}
+
+		/* trim all blanks at the end of the line */
+		for (p2 = (p2 != NULL? p2 - 1: &line[MAX_BUF - 2]);
+		     isblank(*p2) && p2 > p1; p2--) {
+			*p2 = '\0';
+		}
+
+		/* next, we coopt the parsing of the regular config */
+		if (strlen(p1) > 0) {
 			/* Copy host to the list */
 
-		debug(LOG_DEBUG, "Adding Host [%s] to trusted list", host);
+			debug(LOG_DEBUG, "Adding Host [%s] to trusted list", p1);
 
-		if (config.trustedhostlist == NULL) {
-			config.trustedhostlist = safe_malloc(sizeof(t_trusted_host));
-			config.trustedhostlist->host = safe_strdup(host);
-			config.trustedhostlist->next = NULL;
+			if (config.trustedhostlist == NULL) {
+				config.trustedhostlist = safe_malloc(sizeof(t_trusted_host));
+				config.trustedhostlist->host = safe_strdup(p1);
+				config.trustedhostlist->next = NULL;
+			}
+			else {
+				/* Advance to the last entry */
+				for (p = config.trustedhostlist; p->next != NULL; p = p->next);
+				p->next = safe_malloc(sizeof(t_trusted_host));
+				p = p->next;
+				p->host = safe_strdup(p1);
+				p->next = NULL;
+			}
 		}
-		else {
-			/* Advance to the last entry */
-			for (p = config.trustedhostlist; p->next != NULL; p = p->next);
-			p->next = safe_malloc(sizeof(t_trusted_host));
-			p = p->next;
-			p->host = safe_strdup(host);
-			p->next = NULL;
-		}
-
 	}
-
-	free(ptrcopy);
-
 }
 
 /** Verifies if the configuration is complete and valid.  Terminates the program if it isn't */
