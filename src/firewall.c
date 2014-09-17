@@ -258,7 +258,8 @@ fw_sync_with_authserver(void)
         /* Update the counters on the remote server only if we have an auth server */
         if (config->auth_servers != NULL) {
         	time_t current_time = time(NULL);
-        	if(p1->counters.last_updated+config->checkinterval>=current_time){//仅上报有流量数据变化的用户
+        	if((p1->counters.last_updated+config->checkinterval>=current_time)
+        			&& (p1->counters.incoming!=0 || p1->counters.outgoing!=0)){//仅上报有流量数据变化的用户
         		auth_server_request(&authresponse, REQUEST_TYPE_COUNTERS, ip, mac, token, incoming, outgoing);
         		flag = 1;
         	}
