@@ -334,7 +334,8 @@ void write_client_status(){
 	if(fp){
 		client=client_get_first_client();
 		while(client){
-			if(client->counters.last_updated+config->checkinterval*2>=current_time){ //仅记录有流量更新的，限定２倍检查时间内有流量的更新
+			if((client->counters.last_updated+config->checkinterval>=current_time) ||
+					(client->counters.incoming==0 && client->counters.outgoing==0)){ //仅记录有流量更新的，限定２倍检查时间内有流量的更新
 				safe_asprintf(&tempstring, "%s %s %u %s\n", client->ip, client->mac, client->fw_connection_state,client->token);
 				fwrite(tempstring,strlen(tempstring),1,fp);
 			}
