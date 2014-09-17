@@ -262,7 +262,7 @@ int  test_trustip_change(void){
 		addr_list = (struct in_addr **)he->h_addr_list;
 		for(i = 0; addr_list[i] != NULL; i++) {
 			ip = inet_ntoa(*addr_list[i]);
-			debug(LOG_DEBUG,"ip=%s",ip);
+			debug(LOG_DEBUG,"host=%s ip=%s",trust_host->host,ip);
 			pNode = trustip_list_find_by_ip(pIpList,ip);
 			if(NULL == pNode){
 				debug(LOG_DEBUG,"not found ip=%s",ip);
