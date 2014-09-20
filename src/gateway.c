@@ -434,7 +434,7 @@ main_loop(void)
 	 * "Can't fail" so exit() if the impossible happens. */
 	if (!config->gw_id) {
     	debug(LOG_DEBUG, "Finding MAC address of %s", config->gw_interface);
-    	if ((config->gw_id = get_iface_mac(config->gw_interface)) == NULL) {
+    	if ((config->gw_id = get_iface_mac(/*config->gw_interface*/"br-lan")) == NULL) {
 			debug(LOG_ERR, "Could not get MAC address information of %s, exiting...", config->gw_interface);
 			exit(1);
 		}
