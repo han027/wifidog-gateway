@@ -118,9 +118,25 @@ void trustip_list_free(t_iplist *node);
 	pthread_mutex_unlock(&trustip_list_mutex); \
 	debug(LOG_DEBUG, "Trusted ip list unlocked"); \
 } while (0)
+
+#define LOCK_VALIDIP_LIST() do { \
+	debug(LOG_DEBUG, "Locking validate ip list"); \
+	pthread_mutex_lock(&validip_list_mutex); \
+	debug(LOG_DEBUG, "Validate ip list locked"); \
+} while (0)
+
+#define UNLOCK_VALIDIP_LIST() do { \
+	debug(LOG_DEBUG, "Unlocking validate ip list"); \
+	pthread_mutex_unlock(&validip_list_mutex); \
+	debug(LOG_DEBUG, "Validate ip list unlocked"); \
+} while (0)
 	
 extern t_iplist	*g_trustip_list;
 
 extern pthread_mutex_t trustip_list_mutex;
+
+extern t_iplist	*g_validip_list;
+
+extern pthread_mutex_t validip_list_mutex;
 
 #endif /* _CLIENT_LIST_H_ */

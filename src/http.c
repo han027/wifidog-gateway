@@ -66,7 +66,6 @@ http_callback_404(httpd *webserver, request *r)
 	char tmp_url[MAX_BUF],
 			*url,
 			*mac;
-	t_client	*client;
 	s_config	*config = config_get_config();
 	t_auth_serv	*auth_server = get_auth_server();
 
@@ -135,14 +134,6 @@ http_callback_404(httpd *webserver, request *r)
 		debug(LOG_INFO, "Captured %s requesting [%s] and re-directing them to login page", r->clientAddr, url);
 		http_send_redirect_to_auth(r, urlFragment, "Redirect to login page");
 		free(urlFragment);
-		//直接设置为认证中状态
-		LOCK_CLIENT_LIST();
-		if ((client = client_list_find(r->clientAddr, mac)) == NULL) {
-			client = client_list_append(r->clientAddr, mac, "");
-		}
-		client->fw_connection_state = FW_MARK_PROBATION;
-		fw_allow(client->ip, client->mac, FW_MARK_PROBATION);
-		UNLOCK_CLIENT_LIST();
 	}
 	free(url);
 }
@@ -292,10 +283,6 @@ http_callback_auth(httpd *webserver, request *r)
  			} 
  			else {
 				debug(LOG_DEBUG, "Client for %s is already in the client list", client->ip);
-				if(strlen(client->token)==0){
-					free(client->token);
-					client->token = safe_strdup(token->value);
-				}
 			}
 
 			if(changed_flag == 1){

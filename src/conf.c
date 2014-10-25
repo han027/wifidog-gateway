@@ -97,6 +97,7 @@ typedef enum {
         oHtmlMessageFile,
 	oProxyPort,
 	oTrustedHostList,
+	oValidHostList,
 } OpCodes;
 
 /** @internal
@@ -138,6 +139,7 @@ static const struct {
         { "htmlmessagefile",		oHtmlMessageFile },
 	{ "proxyport",			oProxyPort },
 	{ "trustedhostlist",	oTrustedHostList},
+	{ "validhostlist", oValidHostList},
 	{ NULL,				oBadOption },
 };
 
@@ -147,6 +149,7 @@ static void parse_auth_server(FILE *, const char *, int *);
 static int _parse_firewall_rule(const char *ruleset, char *leftover);
 static void parse_firewall_ruleset(const char *, FILE *, const char *, int *);
 static void parse_trusted_host_list(FILE *, const char *, int *);
+static void parse_valid_host_list(FILE*,const char*, int *);
 
 static OpCodes config_parse_token(const char *cp, const char *filename, int linenum);
 
@@ -188,6 +191,8 @@ config_init(void)
 	config.rulesets = NULL;
 	config.trustedmaclist = NULL;
 	config.proxy_port = 0;
+	config.trustedhostlist = NULL;
+	config.validhostlist = NULL;
 }
 
 /**
@@ -725,6 +730,10 @@ config_read(const char *filename)
 					parse_trusted_host_list(fd, filename,
 							&linenum);
 					break;
+				case oValidHostList:
+					parse_valid_host_list(fd, filename,
+							&linenum);
+					break;
 				case oHTTPDName:
 					config.httpdname = safe_strdup(p1);
 					break;
@@ -887,6 +896,59 @@ parse_trusted_host_list(FILE *file, const char *filename, int *linenum) {
 			else {
 				/* Advance to the last entry */
 				for (p = config.trustedhostlist; p->next != NULL; p = p->next);
+				p->next = safe_malloc(sizeof(t_trusted_host));
+				p = p->next;
+				p->host = safe_strdup(p1);
+				p->next = NULL;
+			}
+		}
+	}
+}
+
+static void
+parse_valid_host_list(FILE *file, const char *filename, int *linenum) {
+	t_trusted_host *p = NULL;
+
+	char		line[MAX_BUF],
+			*p1,
+			*p2;
+
+	/* Parsing loop */
+	while (memset(line, 0, MAX_BUF) && fgets(line, MAX_BUF - 1, file) && (strchr(line, '}') == NULL)) {
+		(*linenum)++; /* increment line counter. */
+
+		/* skip leading blank spaces */
+		for (p1 = line; isblank(*p1); p1++);
+
+		/* End at end of line */
+		if ((p2 = strchr(p1, '#')) != NULL) {
+			*p2 = '\0';
+		} else if ((p2 = strchr(p1, '\r')) != NULL) {
+			*p2 = '\0';
+		} else if ((p2 = strchr(p1, '\n')) != NULL) {
+			*p2 = '\0';
+		}
+
+		/* trim all blanks at the end of the line */
+		for (p2 = (p2 != NULL? p2 - 1: &line[MAX_BUF - 2]);
+		     isblank(*p2) && p2 > p1; p2--) {
+			*p2 = '\0';
+		}
+
+		/* next, we coopt the parsing of the regular config */
+		if (strlen(p1) > 0) {
+			/* Copy host to the list */
+
+			debug(LOG_DEBUG, "Adding Host [%s] to validate list", p1);
+
+			if (config.validhostlist == NULL) {
+				config.validhostlist = safe_malloc(sizeof(t_trusted_host));
+				config.validhostlist->host = safe_strdup(p1);
+				config.validhostlist->next = NULL;
+			}
+			else {
+				/* Advance to the last entry */
+				for (p = config.validhostlist; p->next != NULL; p = p->next);
 				p->next = safe_malloc(sizeof(t_trusted_host));
 				p = p->next;
 				p->host = safe_strdup(p1);

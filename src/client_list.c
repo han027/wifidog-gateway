@@ -49,6 +49,10 @@ pthread_mutex_t trustip_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 t_iplist	*g_trustip_list = NULL;
 
+pthread_mutex_t validip_list_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+t_iplist	*g_validip_list = NULL;
+
 /** Global mutex to protect access to the client list */
 pthread_mutex_t client_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 

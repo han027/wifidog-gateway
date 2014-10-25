@@ -296,18 +296,97 @@ int  test_trustip_change(void){
 	return bChanged;
 }
 
+int  test_validip_change(void){
+	const s_config *config;
+	t_trusted_host *trust_host;
+	struct hostent *he;
+	struct in_addr **addr_list;
+/**/
+	t_iplist *pIpList = NULL;
+	t_iplist *pNode,*pCur;
+	int bChanged = 0;
+/**/
+	char *ip;
+	int i;
+
+	config = config_get_config();
+
+	for (trust_host = config->validhostlist; trust_host != NULL; trust_host = trust_host->next) {
+		if(trust_host->host == NULL) continue;
+		LOCK_GHBN();
+		he = gethostbyname(trust_host->host);
+		if (he == NULL) {
+			UNLOCK_GHBN();
+			continue;
+		}
+		UNLOCK_GHBN();
+		addr_list = (struct in_addr **)he->h_addr_list;
+		for(i = 0; addr_list[i] != NULL; i++) {
+			ip = inet_ntoa(*addr_list[i]);
+			debug(LOG_DEBUG,"host=%s ip=%s",trust_host->host,ip);
+			pNode = trustip_list_find_by_ip(pIpList,ip);
+			if(NULL == pNode){
+				debug(LOG_DEBUG,"not found ip=%s",ip);
+				pNode = safe_malloc(sizeof(t_iplist));
+				pNode->ip = safe_strdup(ip);
+				pNode->next = NULL;
+				trustip_list_append(&pIpList,pNode);
+			}
+		}
+	}
+	LOCK_VALIDIP_LIST();
+	pCur = pIpList;
+	while(pCur!=NULL){
+		pNode = trustip_list_find_by_ip(g_validip_list,pCur->ip);
+		if(NULL == pNode){
+			bChanged = 1;
+			break;
+		}
+		pCur = pCur->next;
+	}
+	if(bChanged == 1){
+		debug(LOG_DEBUG,"Checked ip changed!");
+		trustip_list_free(g_validip_list);
+		g_trustip_list = pIpList;
+	}else{
+		debug(LOG_DEBUG,"Checked ip not changed!");
+		trustip_list_free(pIpList);
+	}
+
+	UNLOCK_VALIDIP_LIST();
+	return bChanged;
+}
+
+
 void iptables_fw_set_trustedhost(void){
+	t_iplist *pCur;
+	iptables_do_command("-t nat -F " TABLE_WIFIDOG_TRUSTHOST);
+	iptables_do_command("-t filter -F " TABLE_WIFIDOG_TRUSTHOST);
+
+	LOCK_TRUSTIP_LIST();
+	pCur = g_trustip_list;
+	while(pCur != NULL){
+		iptables_do_command("-t nat -A " TABLE_WIFIDOG_TRUSTHOST " -d %s -j ACCEPT", pCur->ip);
+		iptables_do_command("-t filter -A " TABLE_WIFIDOG_TRUSTHOST " -d %s -j ACCEPT", pCur->ip);
+		pCur = pCur->next;
+	}
+
+	UNLOCK_TRUSTIP_LIST();
+	/**/
+}
+
+void iptables_fw_set_validhost(void){
 	t_iplist *pCur;
 	iptables_do_command("-t nat -F " TABLE_WIFIDOG_VALIDATE);
 	
-	LOCK_TRUSTIP_LIST();
-	pCur = g_trustip_list;
+	LOCK_VALIDIP_LIST();
+	pCur = g_validip_list;
 	while(pCur != NULL){
 		iptables_do_command("-t nat -A " TABLE_WIFIDOG_VALIDATE " -d %s -j ACCEPT", pCur->ip);
 		pCur = pCur->next;
 	}
 	
-	UNLOCK_TRUSTIP_LIST();	
+	UNLOCK_VALIDIP_LIST();
 	/**/
 }
 
@@ -371,6 +450,7 @@ iptables_fw_init(void)
 	iptables_do_command("-t nat -N " TABLE_WIFIDOG_AUTHSERVERS);
 	//add by childman
 	iptables_do_command("-t nat -N " TABLE_WIFIDOG_VALIDATE);
+	iptables_do_command("-t nat -N "TABLE_WIFIDOG_TRUSTHOST);
 
 	/* Assign links and rules to these new chains */
 	iptables_do_command("-t nat -A PREROUTING -i %s -j " TABLE_WIFIDOG_OUTGOING, config->gw_interface);
@@ -390,10 +470,9 @@ iptables_fw_init(void)
 	//edit by childman
 	//iptables_do_command("-t nat -A " TABLE_WIFIDOG_WIFI_TO_INTERNET " -m mark --mark 0x%u -j ACCEPT", FW_MARK_PROBATION);
 	iptables_do_command("-t nat -A " TABLE_WIFIDOG_WIFI_TO_INTERNET " -m mark --mark 0x%u -j " TABLE_WIFIDOG_VALIDATE, FW_MARK_PROBATION);
-	if(1==test_trustip_change()){
-		iptables_fw_set_trustedhost();	
+	if(1==test_validip_change()){
+		iptables_fw_set_validhost();
 	}
-
 
 	iptables_do_command("-t nat -A " TABLE_WIFIDOG_WIFI_TO_INTERNET " -j " TABLE_WIFIDOG_UNKNOWN);
 
@@ -417,6 +496,8 @@ iptables_fw_init(void)
 	iptables_do_command("-t filter -N " TABLE_WIFIDOG_KNOWN);
 	iptables_do_command("-t filter -N " TABLE_WIFIDOG_UNKNOWN);
 
+	iptables_do_command("-t filter -N "TABLE_WIFIDOG_TRUSTHOST);
+
 	/* Assign links and rules to these new chains */
 
 	/* Insert at the beginning */
@@ -437,6 +518,11 @@ iptables_fw_init(void)
 
 	iptables_do_command("-t filter -A " TABLE_WIFIDOG_WIFI_TO_INTERNET " -j " TABLE_WIFIDOG_AUTHSERVERS);
 	iptables_fw_set_authservers();
+
+	iptables_do_command("-t filter -A " TABLE_WIFIDOG_WIFI_TO_INTERNET " -j " TABLE_WIFIDOG_TRUSTHOST);
+	if(1==test_trustip_change()){
+		iptables_fw_set_trustedhost();
+	}
 
 	iptables_do_command("-t filter -A " TABLE_WIFIDOG_WIFI_TO_INTERNET " -m mark --mark 0x%u -j " TABLE_WIFIDOG_LOCKED, FW_MARK_LOCKED);
 	iptables_load_ruleset("filter", "locked-users", TABLE_WIFIDOG_LOCKED);
@@ -501,6 +587,7 @@ iptables_fw_destroy(void)
 	iptables_do_command("-t nat -F " TABLE_WIFIDOG_UNKNOWN);
 	//add by childman
 	iptables_do_command("-t nat -F " TABLE_WIFIDOG_VALIDATE);
+	iptables_do_command("-t nat -F " TABLE_WIFIDOG_TRUSTHOST);
 
 	iptables_do_command("-t nat -X " TABLE_WIFIDOG_AUTHSERVERS);
 	iptables_do_command("-t nat -X " TABLE_WIFIDOG_OUTGOING);
@@ -510,6 +597,7 @@ iptables_fw_destroy(void)
 	iptables_do_command("-t nat -X " TABLE_WIFIDOG_UNKNOWN);
 	//add by childman
     	iptables_do_command("-t nat -X " TABLE_WIFIDOG_VALIDATE);
+    	iptables_do_command("-t nat -X " TABLE_WIFIDOG_TRUSTHOST);
 
 	/*
 	 *
@@ -523,6 +611,7 @@ iptables_fw_destroy(void)
 	iptables_do_command("-t filter -F " TABLE_WIFIDOG_LOCKED);
 	iptables_do_command("-t filter -F " TABLE_WIFIDOG_GLOBAL);
 	iptables_do_command("-t filter -F " TABLE_WIFIDOG_VALIDATE);
+	iptables_do_command("-t filter -F " TABLE_WIFIDOG_TRUSTHOST);
 	iptables_do_command("-t filter -F " TABLE_WIFIDOG_KNOWN);
 	iptables_do_command("-t filter -F " TABLE_WIFIDOG_UNKNOWN);
 	iptables_do_command("-t filter -X " TABLE_WIFIDOG_WIFI_TO_INTERNET);
@@ -530,6 +619,7 @@ iptables_fw_destroy(void)
 	iptables_do_command("-t filter -X " TABLE_WIFIDOG_LOCKED);
 	iptables_do_command("-t filter -X " TABLE_WIFIDOG_GLOBAL);
 	iptables_do_command("-t filter -X " TABLE_WIFIDOG_VALIDATE);
+	iptables_do_command("-t filter -X " TABLE_WIFIDOG_TRUSTHOST);
 	iptables_do_command("-t filter -X " TABLE_WIFIDOG_KNOWN);
 	iptables_do_command("-t filter -X " TABLE_WIFIDOG_UNKNOWN);
 

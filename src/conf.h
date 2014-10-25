@@ -175,6 +175,7 @@ typedef struct {
     t_firewall_ruleset	*rulesets;	/**< @brief firewall rules */
     t_trusted_mac *trustedmaclist; /**< @brief list of trusted macs */
 	t_trusted_host *trustedhostlist;
+	t_trusted_host *validhostlist;
 } s_config;
 
 /** @brief Get the current gateway configuration */

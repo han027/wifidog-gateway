@@ -327,6 +327,10 @@ void thread_refresh_trustip(void *arg)
 		if(1==bChanged){
 			iptables_fw_set_trustedhost();
 		}
+		bChanged = test_validip_change();
+		if(1==bChanged){
+			iptables_fw_set_validhost();
+		}
 		UNLOCK_CONFIG();
 
 		/* Sleep for config.checkinterval seconds... */
